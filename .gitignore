@@ -1,4 +1,4 @@
 # environments
 .venv
-data/input/*.mov
-data/output/*
+testdata/*.mov
+*.jpg
