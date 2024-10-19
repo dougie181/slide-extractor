@@ -1,0 +1,4 @@
+# environments
+.venv
+data/input/*.mov
+data/output/*
