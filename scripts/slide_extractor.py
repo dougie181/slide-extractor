@@ -4,7 +4,9 @@ import cv2
 import numpy as np
 import os
 import sys
+from skimage.metrics import structural_similarity as ssim
 
+# First Pass: Extract slides from presentation video
 def extract_slides_from_presentation(video_path, output_dir, frame_diff_threshold=30, min_area=500, similarity_threshold=0.95, stable_duration=2):
     # Open the video file
     cap = cv2.VideoCapture(video_path)
@@ -78,7 +80,8 @@ def extract_slides_from_presentation(video_path, output_dir, frame_diff_threshol
     cap.release()
     print(f"Processing complete. Extracted {slide_count} slides.")
 
-def calculate_histogram_similarity(image1_path, image2_path):
+# Second Pass: Refine using histogram and pixel comparisons
+def calculate_histogram_similarity(image1_path, image2_path, blur=True):
     """Calculate histogram similarity between two images."""
     image1 = cv2.imread(image1_path)
     image2 = cv2.imread(image2_path)
@@ -88,6 +91,11 @@ def calculate_histogram_similarity(image1_path, image2_path):
 
     # Resize images to the same size for comparison
     image1 = cv2.resize(image1, (image2.shape[1], image2.shape[0]))
+
+    # Apply stronger Gaussian blur to reduce noise and small variations
+    if blur:
+        image1 = cv2.GaussianBlur(image1, (9, 9), 0)
+        image2 = cv2.GaussianBlur(image2, (9, 9), 0)
 
     # Convert images to HSV color space
     hsv_image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2HSV)
@@ -104,29 +112,78 @@ def calculate_histogram_similarity(image1_path, image2_path):
 
     return similarity
 
-def second_pass_remove_similar_slides(output_dir, similarity_threshold=0.99):
-    # Get all PNG files in the output directory
-    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png")])
+def calculate_ssim_similarity(image1_path, image2_path):
+    """Calculate SSIM between two images."""
+    image1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)
+    image2 = cv2.imread(image2_path, cv2.IMREAD_GRAYSCALE)
+
+    if image1 is None or image2 is None:
+        return 0.0
+
+    # Resize images to the same size for comparison
+    image1 = cv2.resize(image1, (image2.shape[1], image2.shape[0]))
+
+    # Compute SSIM
+    ssim_value, _ = ssim(image1, image2, full=True)
+
+    return ssim_value
+
+def second_pass_remove_similar_slides(output_dir, hist_similarity_threshold=0.997, ssim_threshold=0.99):
+    """Second pass to remove similar slides using histogram and SSIM comparisons."""
+    # Get all PNG files in the output directoryignoring files with '_to_be_removed' in the name
+    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png") and "_to_be_removed" not in f])
     
-    last_non_removed_slide_path = None
+    last_kept_slide_path = None
     
     for slide in slide_files:
         slide_path = os.path.join(output_dir, slide)
 
-        if last_non_removed_slide_path is not None:
-            # Compare the current slide with the last non-removed slide using histogram similarity
-            similarity = calculate_histogram_similarity(last_non_removed_slide_path, slide_path)
+        if last_kept_slide_path is not None:
+            # Compare the current slide with the last non-removed slide using histogram similarity and SSIM
+            hist_similarity = calculate_histogram_similarity(last_kept_slide_path, slide_path)
+            ssim_value = calculate_ssim_similarity(last_kept_slide_path, slide_path)
 
-            if similarity > similarity_threshold:
+            # Combine all metrics: histogram and SSIM
+            if hist_similarity > hist_similarity_threshold and ssim_value > ssim_threshold:
                 # If they are too similar, rename the current slide to "to_be_removed"
                 new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed.png")
                 os.rename(slide_path, new_slide_path)
-                print(f"Marked {slide} as too similar to {os.path.basename(last_non_removed_slide_path)} (Similarity: {similarity:.2f})")
+                print(f"Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} (Hist Similarity: {hist_similarity:.3f}, SSIM: {ssim_value:.3f})")
             else:
-                print(f"{slide} is different enough from {os.path.basename(last_non_removed_slide_path)} (Similarity: {similarity:.2f})")
-                last_non_removed_slide_path = slide_path  # Update last non-removed slide
+                print(f"{slide} is different enough from {os.path.basename(last_kept_slide_path)} (Hist Similarity: {hist_similarity:.3f}, SSIM: {ssim_value:.3f})")
+                last_kept_slide_path = slide_path  # Update only when the slide is kept
         else:
-            last_non_removed_slide_path = slide_path  # Initialize for the first slide
+            last_kept_slide_path = slide_path  # Initialize for the first slide
+
+# Third Pass: Use SSIM (Structural Similarity Index) to refine further, ignoring '_to_be_removed' files
+def third_pass_ssim(output_dir, ssim_threshold=0.95):
+    # Get all PNG files in the output directory, ignoring files with '_to_be_removed' in the name
+    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png") and "_to_be_removed" not in f])
+    
+    last_kept_slide_path = None
+    
+    for slide in slide_files:
+        slide_path = os.path.join(output_dir, slide)
+
+        if last_kept_slide_path is not None:
+            # Load images for SSIM comparison
+            image1 = cv2.imread(last_kept_slide_path, cv2.IMREAD_GRAYSCALE)
+            image2 = cv2.imread(slide_path, cv2.IMREAD_GRAYSCALE)
+
+            if image1 is not None and image2 is not None:
+                image1 = cv2.resize(image1, (image2.shape[1], image2.shape[0]))  # Resize for consistency
+                ssim_value, _ = ssim(image1, image2, full=True)
+
+                if ssim_value > ssim_threshold:
+                    # If SSIM is too high, rename the current slide to "to_be_removed"
+                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed.png")
+                    os.rename(slide_path, new_slide_path)
+                    print(f"Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} (SSIM: {ssim_value:.2f})")
+                else:
+                    print(f"{slide} is different enough from {os.path.basename(last_kept_slide_path)} (SSIM: {ssim_value:.2f})")
+                    last_kept_slide_path = slide_path  # Update only when the slide is kept
+        else:
+            last_kept_slide_path = slide_path  # Initialize for the first slide
 
 if __name__ == "__main__":
     # Ensure the script is called with the movie file argument and pass type
@@ -134,7 +191,7 @@ if __name__ == "__main__":
         print("Usage: python slide_extractor.py <video_filename> <pass_type>")
         sys.exit(1)
 
-    # Get the video file name and pass type (first, second, both) from the command line
+    # Get the video file name and pass type (first, second, third, all) from the command line
     video_filename = sys.argv[1]
     pass_type = sys.argv[2].lower()
 
@@ -151,9 +208,12 @@ if __name__ == "__main__":
         extract_slides_from_presentation(video_file_path, output_folder)
     elif pass_type == "second":
         second_pass_remove_similar_slides(output_folder)
+    elif pass_type == "third":
+        third_pass_ssim(output_folder)
     elif pass_type == "all":
         extract_slides_from_presentation(video_file_path, output_folder)
         second_pass_remove_similar_slides(output_folder)
+        third_pass_ssim(output_folder)
     else:
-        print("Invalid pass type. Use 'first', 'second', or 'both'.")
+        print("Invalid pass type. Use 'first', 'second', 'third', or 'all'.")
         sys.exit(1)
