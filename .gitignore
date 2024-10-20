@@ -2,3 +2,4 @@
 .venv
 testdata/*.mov
 *.jpg
+*.png
