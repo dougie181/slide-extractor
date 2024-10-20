@@ -2,6 +2,9 @@
 
 # Slide Extractor from Video - A tool to automatically detect slide changes in video recordings and save individual slides as images.
 
+# It works best when the slides in the video are distinct and do not change much between frames.
+# It does not work well with videos that have a lot of motion or changes in the background.
+
 # Copyright (C) 2024 - Doug Inman
 
 # This program is free software: you can redistribute it and/or modify
