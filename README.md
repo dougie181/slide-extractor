@@ -1,12 +1,16 @@
 # Slide Extractor from Video
 
-This project provides a Python-based command-line tool that extracts individual slides from a screen recording (e.g., `.mov` or `.mp4` video file). The tool detects when the content of a slide changes and saves each new slide as an image file in a dedicated folder. It helps you break a recorded presentation or video into individual slides for easy access.
+This project provides a Python-based command-line tools that extracts individual slides from a screen recording (e.g., `.mov` or `.mp4` video file). The tools detect when the content of a slide changes and saves each new slide as an image file in a dedicated folder. It helps you break a recorded presentation or video into individual slides for easy access.
 
 ## Features
 - Automatically detects changes between frames and extracts only the slides.
-- Saves each slide as a `.jpg` image.
+- Saves each slide as a `.jpg` or `.png` images.
 - Includes a prompt to avoid overwriting existing files in case of duplicate output folder names.
 - Supports input files in `.mov`, `.mp4`, and other video formats supported by OpenCV.
+
+- There are two scripts - neither are working 100%
+  - `extract_slides.py`
+  - `slide_extractor.py`
 
 ## Prerequisites
 
@@ -61,35 +65,35 @@ This will install OpenCV, NumPy, and any other dependencies listed in the `requi
 
 ### 4. Make the Script Executable (macOS/Linux Only)
 ```bash
-chmod +x ./scripts/processMovie.py
+chmod +x ./scripts/extract_slides.py
 ```
 
 ## Usage
 
 ### 1. Running the Script
 
-Once you have set up the environment, you can use the `processMovie.py` script to extract slides from your video. Here’s how to run the script:
+Once you have set up the environment, you can use the `extract_slides.py` script to extract slides from your video. Here’s how to run the script:
 
 - **macOS/Linux:**
 
 	```bash
-	./scripts/processMovie.py <path_to_your_video_file>
+	./scripts/extract_slides.py <path_to_your_video_file>
 	```
 
 - **Windows:** 
 
 	```powershell
-	python scripts/processMovie.py <path_to_your_video_file>
+	python scripts/extract_slides.py <path_to_your_video_file>
 	```
 
 For example, if your video file is located in `data/input/slides.mov`, you would run:
 ```bash
-./scripts/processMovie.py data/input/slides.mov  # macOS/Linux
+./scripts/extract_slides.py data/input/slides.mov  # macOS/Linux
 ```
 
 or
 ```powershell
-python scripts/processMovie.py data/input/slides.mov  # Windows
+python scripts/extract_slides.py data/input/slides.mov  # Windows
 ```
 
 ### 2. Overwrite Warning
@@ -108,7 +112,7 @@ For example, if your video file is `slides.mov`, the slides will be saved in a f
 
 ### 4. Example command
 ```bash
-./scripts/processMovie.py data/input/slides.mov
+./scripts/extract_slides.py data/input/slides.mov
 ```
 The above command will extract slides from the `slides.mov` video located in the data/input folder and store the output images in the `slides_extracted_frame`s folder.
 
