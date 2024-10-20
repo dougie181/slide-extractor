@@ -128,19 +128,21 @@ def calculate_ssim_similarity(image1_path, image2_path):
 
     return ssim_value
 
-def second_pass_refinement(output_dir, hist_similarity_threshold=0.997, ssim_threshold=0.99, passes=3, hist_weight=0.6):
+def second_pass_refinement(output_dir, hist_similarity_threshold=0.998, ssim_threshold=0.995, passes=3, hist_weight=0.5):
     """
     Second pass to remove similar slides using a combination of histogram and SSIM,
-    with multiple refinement passes and dynamic threshold tightening.
+    with multiple refinement passes and dynamic threshold tightening. 
+    Files marked for removal will include the pass number.
     """
-    # Get all PNG files in the output directory
-    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png") and "_to_be_removed" not in f])
-   
+    # Get all PNG files in the output directory, ignoring files with '_to_be_removed'
+    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png")])
+    
     for pass_num in range(passes):
         print(f"Running pass {pass_num + 1}/{passes}")
         last_kept_slide_path = None
         
-        for slide in slide_files:
+        # Use a copy of the slide_files list for safe iteration while removing items
+        for slide in slide_files[:]:
             slide_path = os.path.join(output_dir, slide)
 
             if last_kept_slide_path is not None:
@@ -152,32 +154,40 @@ def second_pass_refinement(output_dir, hist_similarity_threshold=0.997, ssim_thr
                 combined_similarity = hist_weight * hist_similarity + (1 - hist_weight) * ssim_value
 
                 # Adjust the thresholds dynamically across passes
-                dynamic_hist_threshold = hist_similarity_threshold - (pass_num * 0.001)
-                dynamic_ssim_threshold = ssim_threshold - (pass_num * 0.01)
+                dynamic_hist_threshold = hist_similarity_threshold - (pass_num * 0.0005)
+                dynamic_ssim_threshold = ssim_threshold - (pass_num * 0.002)
 
-                # If similarity exceeds both thresholds, mark the slide for removal
-                if hist_similarity > dynamic_hist_threshold and ssim_value > dynamic_ssim_threshold:
-                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed.png")
+                # If similarity exceeds both thresholds, mark the slide for removal and add the pass number to the filename
+                if hist_similarity >= dynamic_hist_threshold and ssim_value >= dynamic_ssim_threshold:
+                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed_pass_{pass_num+1}.png")
                     os.rename(slide_path, new_slide_path)
                     print(f"Pass {pass_num+1}: Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} "
                           f"(Hist Similarity: {hist_similarity:.3f}, SSIM: {ssim_value:.3f}, Combined: {combined_similarity:.3f})")
+
+                    # Remove the renamed file from the list
+                    slide_files.remove(slide)
                 else:
                     print(f"Pass {pass_num+1}: {slide} is different enough from {os.path.basename(last_kept_slide_path)} "
                           f"(Hist Similarity: {hist_similarity:.3f}, SSIM: {ssim_value:.3f}, Combined: {combined_similarity:.3f})")
                     last_kept_slide_path = slide_path  # Update only when the slide is kept
             else:
                 last_kept_slide_path = slide_path  # Initialize for the first slide
+
         print(f"Completed pass {pass_num + 1}/{passes}\n")
 
 # Third Pass: Use SSIM (Structural Similarity Index) to refine further, ignoring '_to_be_removed' files
 def third_pass_ssim(output_dir, ssim_threshold=0.95):
     # Get all PNG files in the output directory, ignoring files with '_to_be_removed' in the name
-    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png") and "_to_be_removed" not in f])
+    slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png")])
     
     last_kept_slide_path = None
     
-    for slide in slide_files:
+    for slide in slide_files[:]:
         slide_path = os.path.join(output_dir, slide)
+
+        # Skip slides already marked "to_be_removed" from any previous step or pass
+        if "_to_be_removed" in slide:
+            continue
 
         if last_kept_slide_path is not None:
             # Load images for SSIM comparison
@@ -193,6 +203,9 @@ def third_pass_ssim(output_dir, ssim_threshold=0.95):
                     new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed.png")
                     os.rename(slide_path, new_slide_path)
                     print(f"Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} (SSIM: {ssim_value:.2f})")
+
+                    # Remove the renamed file from the list
+                    slide_files.remove(slide)
                 else:
                     print(f"{slide} is different enough from {os.path.basename(last_kept_slide_path)} (SSIM: {ssim_value:.2f})")
                     last_kept_slide_path = slide_path  # Update only when the slide is kept
