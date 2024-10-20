@@ -78,10 +78,10 @@ def extract_slides_from_presentation(video_path, output_dir, frame_diff_threshol
     cap.release()
     print(f"Processing complete. Extracted {slide_count} slides.")
 
-def calculate_image_similarity(image1_path, image2_path):
-    """Calculate similarity between two images using structural similarity."""
-    image1 = cv2.imread(image1_path, cv2.IMREAD_GRAYSCALE)
-    image2 = cv2.imread(image2_path, cv2.IMREAD_GRAYSCALE)
+def calculate_histogram_similarity(image1_path, image2_path):
+    """Calculate histogram similarity between two images."""
+    image1 = cv2.imread(image1_path)
+    image2 = cv2.imread(image2_path)
 
     if image1 is None or image2 is None:
         return 0.0
@@ -89,37 +89,44 @@ def calculate_image_similarity(image1_path, image2_path):
     # Resize images to the same size for comparison
     image1 = cv2.resize(image1, (image2.shape[1], image2.shape[0]))
 
-    # Calculate the absolute difference between the images
-    diff = cv2.absdiff(image1, image2)
-    non_zero_count = np.count_nonzero(diff)
-    total_pixels = diff.size
-    similarity = 1 - (non_zero_count / total_pixels)
-    
+    # Convert images to HSV color space
+    hsv_image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2HSV)
+    hsv_image2 = cv2.cvtColor(image2, cv2.COLOR_BGR2HSV)
+
+    # Calculate histograms and normalize
+    hist1 = cv2.calcHist([hsv_image1], [0, 1], None, [50, 60], [0, 180, 0, 256])
+    hist2 = cv2.calcHist([hsv_image2], [0, 1], None, [50, 60], [0, 180, 0, 256])
+    cv2.normalize(hist1, hist1, 0, 1, cv2.NORM_MINMAX)
+    cv2.normalize(hist2, hist2, 0, 1, cv2.NORM_MINMAX)
+
+    # Compare the histograms using correlation
+    similarity = cv2.compareHist(hist1, hist2, cv2.HISTCMP_CORREL)
+
     return similarity
 
-def second_pass_remove_similar_slides(output_dir, similarity_threshold=0.98):
+def second_pass_remove_similar_slides(output_dir, similarity_threshold=0.99):
     # Get all PNG files in the output directory
     slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png")])
     
-    previous_slide_path = None
+    last_non_removed_slide_path = None
     
     for slide in slide_files:
         slide_path = os.path.join(output_dir, slide)
 
-        if previous_slide_path is not None:
-            # Compare the current slide with the previous one
-            similarity = calculate_image_similarity(previous_slide_path, slide_path)
+        if last_non_removed_slide_path is not None:
+            # Compare the current slide with the last non-removed slide using histogram similarity
+            similarity = calculate_histogram_similarity(last_non_removed_slide_path, slide_path)
 
             if similarity > similarity_threshold:
                 # If they are too similar, rename the current slide to "to_be_removed"
                 new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed.png")
                 os.rename(slide_path, new_slide_path)
-                print(f"Marked {slide} as too similar to {os.path.basename(previous_slide_path)} (Similarity: {similarity:.2f})")
+                print(f"Marked {slide} as too similar to {os.path.basename(last_non_removed_slide_path)} (Similarity: {similarity:.2f})")
             else:
-                print(f"{slide} is different enough from {os.path.basename(previous_slide_path)} (Similarity: {similarity:.2f})")
-        
-        # Update the previous slide
-        previous_slide_path = slide_path
+                print(f"{slide} is different enough from {os.path.basename(last_non_removed_slide_path)} (Similarity: {similarity:.2f})")
+                last_non_removed_slide_path = slide_path  # Update last non-removed slide
+        else:
+            last_non_removed_slide_path = slide_path  # Initialize for the first slide
 
 if __name__ == "__main__":
     # Ensure the script is called with the movie file argument and pass type
@@ -137,14 +144,14 @@ if __name__ == "__main__":
     base_name = os.path.splitext(video_filename)[0]
     
     # Define the output folder name to include the original file name
-    output_folder = os.path.join(os.getcwd(), f"extracted_slides_{base_name}")
+    output_folder = os.path.join(os.getcwd(), f"extracted_slides/{base_name}")
 
     # Run based on the pass_type
     if pass_type == "first":
         extract_slides_from_presentation(video_file_path, output_folder)
     elif pass_type == "second":
         second_pass_remove_similar_slides(output_folder)
-    elif pass_type == "both":
+    elif pass_type == "all":
         extract_slides_from_presentation(video_file_path, output_folder)
         second_pass_remove_similar_slides(output_folder)
     else:
