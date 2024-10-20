@@ -145,6 +145,10 @@ def second_pass_refinement(output_dir, hist_similarity_threshold=0.998, ssim_thr
         for slide in slide_files[:]:
             slide_path = os.path.join(output_dir, slide)
 
+            # Skip slides already marked "to_be_removed" from any previous step or pass
+            if "_to_be_removed" in slide:
+                continue
+
             if last_kept_slide_path is not None:
                 # Compare the current slide with the last non-removed slide using histogram similarity and SSIM
                 hist_similarity = calculate_histogram_similarity(last_kept_slide_path, slide_path)
@@ -159,7 +163,7 @@ def second_pass_refinement(output_dir, hist_similarity_threshold=0.998, ssim_thr
 
                 # If similarity exceeds both thresholds, mark the slide for removal and add the pass number to the filename
                 if hist_similarity >= dynamic_hist_threshold and ssim_value >= dynamic_ssim_threshold:
-                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed_pass_{pass_num+1}.png")
+                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed_pass_2_step_{pass_num+1}.png")
                     os.rename(slide_path, new_slide_path)
                     print(f"Pass {pass_num+1}: Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} "
                           f"(Hist Similarity: {hist_similarity:.3f}, SSIM: {ssim_value:.3f}, Combined: {combined_similarity:.3f})")
@@ -176,12 +180,18 @@ def second_pass_refinement(output_dir, hist_similarity_threshold=0.998, ssim_thr
         print(f"Completed pass {pass_num + 1}/{passes}\n")
 
 # Third Pass: Use SSIM (Structural Similarity Index) to refine further, ignoring '_to_be_removed' files
-def third_pass_ssim(output_dir, ssim_threshold=0.95):
+def third_pass_feature_matching(output_dir, feature_threshold=0.75):
+    """
+    Third pass to remove similar slides using ORB feature matching.
+    """
     # Get all PNG files in the output directory, ignoring files with '_to_be_removed' in the name
     slide_files = sorted([f for f in os.listdir(output_dir) if f.endswith(".png")])
-    
+
+    # Initialize ORB detector
+    orb = cv2.ORB_create()
+
     last_kept_slide_path = None
-    
+
     for slide in slide_files[:]:
         slide_path = os.path.join(output_dir, slide)
 
@@ -190,24 +200,35 @@ def third_pass_ssim(output_dir, ssim_threshold=0.95):
             continue
 
         if last_kept_slide_path is not None:
-            # Load images for SSIM comparison
+            # Load images for ORB feature matching
             image1 = cv2.imread(last_kept_slide_path, cv2.IMREAD_GRAYSCALE)
             image2 = cv2.imread(slide_path, cv2.IMREAD_GRAYSCALE)
 
             if image1 is not None and image2 is not None:
-                image1 = cv2.resize(image1, (image2.shape[1], image2.shape[0]))  # Resize for consistency
-                ssim_value, _ = ssim(image1, image2, full=True)
+                # Detect ORB key points and descriptors
+                kp1, des1 = orb.detectAndCompute(image1, None)
+                kp2, des2 = orb.detectAndCompute(image2, None)
 
-                if ssim_value > ssim_threshold:
-                    # If SSIM is too high, rename the current slide to "to_be_removed"
-                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed.png")
+                # Create BFMatcher object for feature matching
+                bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+                matches = bf.match(des1, des2)
+
+                # Sort matches by distance
+                matches = sorted(matches, key=lambda x: x.distance)
+
+                # Calculate similarity based on matches
+                match_ratio = len(matches) / min(len(kp1), len(kp2))
+
+                # If the match ratio is high, consider slides as too similar
+                if match_ratio > feature_threshold:
+                    new_slide_path = os.path.join(output_dir, f"{os.path.splitext(slide)[0]}_to_be_removed_pass_3.png")
                     os.rename(slide_path, new_slide_path)
-                    print(f"Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} (SSIM: {ssim_value:.2f})")
+                    print(f"Marked {slide} as too similar to {os.path.basename(last_kept_slide_path)} (Feature Match Ratio: {match_ratio:.2f})")
 
                     # Remove the renamed file from the list
                     slide_files.remove(slide)
                 else:
-                    print(f"{slide} is different enough from {os.path.basename(last_kept_slide_path)} (SSIM: {ssim_value:.2f})")
+                    print(f"{slide} is different enough from {os.path.basename(last_kept_slide_path)} (Feature Match Ratio: {match_ratio:.2f})")
                     last_kept_slide_path = slide_path  # Update only when the slide is kept
         else:
             last_kept_slide_path = slide_path  # Initialize for the first slide
@@ -236,11 +257,11 @@ if __name__ == "__main__":
     elif pass_type == "second":
         second_pass_refinement(output_folder)
     elif pass_type == "third":
-        third_pass_ssim(output_folder)
+        third_pass_feature_matching(output_folder)
     elif pass_type == "all":
         extract_slides_from_presentation(video_file_path, output_folder)
         second_pass_refinement(output_folder)
-        third_pass_ssim(output_folder)
+        third_pass_feature_matching(output_folder)
     else:
         print("Invalid pass type. Use 'first', 'second', 'third', or 'all'.")
         sys.exit(1)
