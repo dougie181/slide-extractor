@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
 
+# Slide Extractor from Video - A tool to automatically detect slide changes in video recordings and save individual slides as images.
+
+# This script has been refactored to include multiple passes for slide refinement and removal of similar slides.
+# It is better than the extract_slide.py script, but I've found it now has too many false positives that it removes
+# from the video in the first pass. This needs further refinement
+
+# Copyright (C) 2024 - Doug Inman
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import cv2
 import numpy as np
 import os
